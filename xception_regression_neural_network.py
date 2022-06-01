@@ -1,11 +1,13 @@
-import keras
 from keras.layers import Dense, GlobalAveragePooling2D
 from keras import Input, Model
 from keras.callbacks import EarlyStopping
 from keras.applications.xception import Xception
 from sklearn.metrics import r2_score
-from utils import load_dataset
+import tensorflow as tf
+import autokeras as ak
+import matplotlib.pyplot as plt
 import numpy as np
+import os
 
 def photoaugment(photos) -> np.array:
 
@@ -26,20 +28,53 @@ def labelaugment(labels) -> np.array:
     
     return np.array(augmented_labels)
 
+def load_dataset(
+			  CHALLENGE_DIR = 'data',
+			  IMG_PATH = 'photos', 
+              POVERTY_PATH = 'labels',
+			  ) -> list:
+
+	'''Loads the training and test datasets using matplotlib and code from utils'''
+
+	train_data = {'X': [], 'y': []}
+	test_data = {'X': [], 'y': []}
+
+	for city in os.listdir(CHALLENGE_DIR):
+
+        # Skip last photo in order to use it to test the model
+		for imgname in os.listdir(f'{CHALLENGE_DIR}/{city}/{IMG_PATH}')[:-1]:    
+			pov_name = imgname.replace('tex', 'poverty')
+
+			train_data['X'].append(plt.imread(f'{CHALLENGE_DIR}/{city}/{IMG_PATH}/{imgname}'))
+			train_data['y'].append(plt.imread(f'{CHALLENGE_DIR}/{city}/{POVERTY_PATH}/{pov_name}').flatten().mean())
+
+		# Add the last photo of the city to the test data
+		imgname = os.listdir(f'{CHALLENGE_DIR}/{city}/{IMG_PATH}')[-1]
+		pov_name = imgname.replace('tex', 'poverty')
+
+		test_data['X'].append(plt.imread(f'{CHALLENGE_DIR}/{city}/{IMG_PATH}/{imgname}'))
+		test_data['y'].append(plt.imread(f'{CHALLENGE_DIR}/{city}/{POVERTY_PATH}/{pov_name}').flatten().mean())
+
+	# Iterate through the data in order to change them to np.array:s
+	train_data = {key: np.array(data) for key, data in train_data.items()}
+	test_data = {key: np.array(data) for key, data in train_data.items()}
+
+	return train_data, test_data
+
 def convert_normalize_augment_tif2npy() -> None:
 
-	'''Uses utils to load the data, then it normalizes, augments, and saves it as a numpy array'''
+	'''Loads the dataset and then it normalizes, augments, and saves it as a numpy array'''
 
-	# Load the data with utils
-	X_train, y_train, X_test, y_test = load_dataset()
+	# Load the data using earlier defined function to load the dataset
+	train, test = load_dataset()
 
 	# Augment examples and their labels
-	augmented_examples = photoaugment(X_train) / 127.5 + 1	# Normalize the images between -1 and 1
-	augmented_labels = labelaugment(y_train) / 100			# Normalize between 0 and 1
+	augmented_examples = photoaugment(train['X']) / 127.5 - 1	# Normalize the images between -1 and 1
+	augmented_labels = labelaugment(train['y']) / 100			# Normalize between 0 and 1
 
 	# Augment testexamples and their testlabels
-	augmented_testexamples = photoaugment(X_test) / 127.5 + 1
-	augmented_testlabels = labelaugment(y_test) / 100
+	augmented_testexamples = photoaugment(test['X']) / 127.5 - 1
+	augmented_testlabels = labelaugment(test['y']) / 100
 
 	# Save the data
 	np.save('augmented_data_x', augmented_examples)
@@ -134,20 +169,21 @@ def get_model(training_examples,		# Provide numpy.array example photos
 if __name__ == '__main__':
 
 	# Load pre normalized and numpy-fied examples and their labels, examples are of shape (256, 256, 3)
-	examples = np.array(np.load('augmented_data_x.npy'))	# Normalized to between -1 and 1
-	labels = np.array(np.load('augmented_data_y.npy'))		# Normalized to between 0 and 1
+	examples = np.load('augmented_data_x.npy')		# Normalized to between -1 and 1
+	labels = np.load('augmented_data_y.npy')		# Normalized to between 0 and 1
 
 	# Get the model and its training history
 	model, history = get_model(examples, labels)
 
-	# Save all usefull data
+	# Save all useful data
 	model.save("model.tf")				# Save the model
 	np.save('history.npy', history)		# Save the history
 
-
 	# Load pre normalized and numpy-fied examples and their labels, examples are of shape (256, 256, 3)
-	test_examples = np.array(np.load("augmented_testdata_x.npy"))	# Normalized to between -1 and 1
-	test_labels = np.array(np.load("augmented_testdata_y.npy"))		# Normalized to between 0 and 1
+	test_examples = np.load('testdata_x.npy')		# Normalized to between -1 and 1
+	test_labels = np.load('testdata_y.npy')		# Normalized to between 0 and 1
+
+	# model = tf.keras.models.load_model('finalmodel.tf', custom_objects=ak.CUSTOM_OBJECTS)
 
 	# Check the model accuracy on never before seen datas
 	test_model(model, test_examples, test_labels)
